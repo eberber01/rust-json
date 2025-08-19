@@ -5,11 +5,10 @@ use std::collections::HashMap;
 use std::slice::Iter;
 use std::str::Chars;
 
-
 #[derive(Debug)]
 enum JsonValue{
     JsonString(String),
-    JsonNumber(u32),
+    JsonNumber(f64),
     JsonObject(HashMap<String, JsonValue>),
     JsonArray(Vec<JsonValue>),
     JsonBool(bool),
@@ -19,7 +18,7 @@ enum JsonValue{
 #[derive(Debug)]
 enum Token {
     TokenString(String),
-    TokenNumber(u32),
+    TokenNumber(f64),
     TokenNull,
     TokenTrue,
     TokenFalse,
@@ -66,7 +65,6 @@ fn parse_object(iterator: &mut Peekable<Iter<'_, Token>>) -> JsonValue {
     JsonValue::JsonObject(entries)
  
 }
-
 
 fn parse_array(iterator: &mut Peekable<Iter<'_, Token>>) -> JsonValue {
     let mut items: Vec<JsonValue> = Vec::new();
@@ -123,7 +121,6 @@ fn parse(iterator: &mut Peekable<Iter<'_, Token>>) -> JsonValue {
                 todo!();
             }
         }
-
     }
     return JsonValue::JsonNull; 
 }
@@ -141,12 +138,41 @@ fn expect_rest_of_constant(rest: &str, iterator: &mut Peekable<Chars<'_>>){
     }
 }
 
+fn tokenize_number(start : char, iterator: &mut Peekable<Chars<'_>>) -> Token {
+    let mut num_str = String::new();
+    let mut has_dec = false;
+
+    num_str.push(start);
+    while iterator.peek().is_some(){
+        let next_char = iterator.peek().unwrap();
+
+        match next_char {
+            '0'..='9' => {
+                num_str.push(iterator.next().unwrap());
+            },
+            '.' =>{
+                if has_dec {
+                    panic!("Invalid chararacter while parsing number: {:?}", next_char)
+                }
+                has_dec = true;
+                num_str.push(iterator.next().unwrap());
+            },
+            _ => break
+        }
+
+    }
+    match num_str.parse::<f64>() {
+        Ok(n) => Token::TokenNumber(n),
+        Err(e) => panic!("Error parsing number: {:?}", e),
+    }
+}
+
+
 fn lex(contents: String) -> Vec<Token> {
     let chars= contents.chars();
     let mut tokens: Vec<Token> = Vec::new();
     let mut iterator = chars.peekable();
     while let Some(c) = iterator.next(){
-        
         match c {
             '{' => tokens.push(Token::LeftBrace),
             '}' => tokens.push(Token::RightBrace),
@@ -175,38 +201,25 @@ fn lex(contents: String) -> Vec<Token> {
                 expect_rest_of_constant("alse", &mut iterator);
                 tokens.push(Token::TokenFalse);
             },
-            digit @ '0'..='9' => {
-               let mut num: u32 = 0; 
-               num += digit.to_digit(10).unwrap();
-                while iterator.peek().is_some(){
-                    let next_char = iterator.peek().unwrap();
-                    
-                    if next_char.is_digit(10) {
-                        num *= 10;
-                        num += iterator.next().unwrap().to_digit(10).unwrap();
-                    }
-                    else{
-                        break;
-                    }
-               }
-               tokens.push(Token::TokenNumber(num));
+            digit @ '0'..='9'   => {
+               let num= tokenize_number(digit, &mut iterator);
+               tokens.push(num);
             },
+            sub @'-' => {
+               let num= tokenize_number(sub, &mut iterator);
+               tokens.push(num);
+            }
             ' ' | '\n' => continue,
             ','=> tokens.push(Token::Comma),
-            _ => {todo!("not impl: {:?}", c)},
+            _ => panic!("Unexpected character: {:?}", c),
         }
     }
-
     tokens
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
     let contents: String = fs::read_to_string("./src/test.json")?;
-    println!("{}", contents);
     let tokens = lex(contents);
-    for token in tokens.iter().clone(){
-        println!("{:?}",token);
-    }
     let mut iterator = tokens.iter().peekable();
     let json = parse(&mut iterator);
     println!("{:?}", json);
